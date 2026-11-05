@@ -53,8 +53,9 @@ Describe 'Invoke-SqlWriteBack' {
     Mock Invoke-SqlWriteBackCommand -ModuleName SqlWriteBack {
       $global:SwbWrites.Add([pscustomobject]@{ set = $Set.name; rows = @($Rows); cs = $ConnectionString })
       foreach ($row in $Rows) {
-        $resp = if ($row.order -eq 3) { [Exception]::new('no match in assignment') } else { '1' }
-        [pscustomobject]@{ start = Get-Date; finish = Get-Date; row = ($row | ConvertTo-Json); sql = $Set.command; params = '[]'; resp = $resp }
+        $ok = $row.order -ne 3
+        $resp = if ($ok) { '1' } else { 'no match in assignment' }
+        [pscustomobject]@{ start = Get-Date; finish = Get-Date; row = ($row | ConvertTo-Json); sql = $Set.command; params = '[]'; ok = $ok; resp = $resp }
       }
     }
   }
@@ -128,6 +129,23 @@ Describe 'the write command' {
     $cm.Parameters['@o'].Value | Should -Be 10
     $cm.Parameters['@q'].Value | Should -Be 1.5
     $cm.Parameters.Count | Should -Be 2
+  }
+
+  It 'keeps the database message and drops the powershell wrapper on a rejected row' {
+    $command = [pscustomobject]@{}
+    $command | Add-Member ScriptMethod ExecuteNonQuery { throw [Data.DataException]::new('no match in assignment') }
+    $result = & (Get-Module SqlWriteBack) { param($c) Invoke-SqlWriteBackRow $c } $command
+    $result.ok | Should -BeFalse
+    $result.resp | Should -BeExactly 'no match in assignment'
+    ([pscustomobject]$result | Format-List * | Out-String) | Should -Not -Match 'Exception calling|FullyQualifiedErrorId'
+  }
+
+  It 'reports an accepted row' {
+    $command = [pscustomobject]@{}
+    $command | Add-Member ScriptMethod ExecuteNonQuery { 1 }
+    $result = & (Get-Module SqlWriteBack) { param($c) Invoke-SqlWriteBackRow $c } $command
+    $result.ok | Should -BeTrue
+    $result.resp | Should -Be '1'
   }
 
   It 'stops the run when the connection cannot open' {

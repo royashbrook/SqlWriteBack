@@ -59,8 +59,8 @@ function Write-SqlWriteBackFile($Path, $Options) {
     $rows | Format-Table -AutoSize * | Out-String -Width 4096 | Write-Host
     $results = @(Invoke-SqlWriteBackCommand $rows $set $Settings.cs[$set.csname])
     $results | Format-List * | Out-String -Width 4096 | Write-Host
-    foreach ($result in $results.Where({ $_.resp -is [Exception] })) {
-      Write-Host "::warning title=$($set.name) write rejected::$($result.resp.GetBaseException().Message)"
+    foreach ($result in $results.Where({ -not $_.ok })) {
+      Write-Host "::warning title=$($set.name) write rejected::$($result.resp)"
     }
   }
 }
@@ -70,6 +70,12 @@ function New-SqlWriteBackCommand($Set, $Row) {
   $cm = [System.Data.SqlClient.SqlCommand]::new($Set.command)
   foreach ($name in $Set.parameters.Keys) { $cm.Parameters.AddWithValue($name, $Row.($Set.parameters[$name])) > $null }
   $cm
+}
+
+# a rejected row keeps the database's own message, not the powershell wrapper around it
+function Invoke-SqlWriteBackRow($Command) {
+  try { @{ ok = $true; resp = $Command.ExecuteNonQuery() | ConvertTo-Json } }
+  catch { @{ ok = $false; resp = $_.Exception.GetBaseException().Message } }
 }
 
 # one connection per dataset: failing to open it stops the run, a rejected row is a result
@@ -82,8 +88,7 @@ function Invoke-SqlWriteBackCommand($Rows, $Set, $ConnectionString) {
       $cm = New-SqlWriteBackCommand $Set $row
       $cm.Connection = $cn
       $params = $cm.Parameters | Select-Object ParameterName, Value | ConvertTo-Json
-      try { $resp = $cm.ExecuteNonQuery() | ConvertTo-Json }
-      catch { $resp = $_.Exception }
+      try { $result = Invoke-SqlWriteBackRow $cm }
       finally { $cm.Dispose() }
       [pscustomobject]@{
         start  = $start
@@ -91,7 +96,8 @@ function Invoke-SqlWriteBackCommand($Rows, $Set, $ConnectionString) {
         row    = $row | ConvertTo-Json
         sql    = $Set.command
         params = $params
-        resp   = $resp
+        ok     = $result.ok
+        resp   = $result.resp
       }
     }
   } finally { $cn.Dispose() }
