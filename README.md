@@ -30,7 +30,7 @@ The module pins DataAgent 0.10.0, Add-PrefixForLogging 1.0.0.3, Clear-Files 1.2.
 }
 ```
 
-`env:NAME` references are resolved by DataAgent when the run starts, and a missing one fails the run. `query_timeout` defaults to 1800 seconds.
+`env:NAME` references are resolved by DataAgent when the run starts, and a missing one fails the run. `query_timeout` defaults to 1800 seconds. A null column is passed as SQL `NULL`, not left for the procedure's default. A parameter mapped to a column the row does not have stops the run.
 
 ## A run
 

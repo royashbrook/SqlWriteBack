@@ -65,10 +65,17 @@ function Write-SqlWriteBackFile($Path, $Options) {
   }
 }
 
-# each named parameter takes the row column the settings map it to
+# each named parameter takes the row column the settings map it to. a null column is sql NULL,
+# a column the row does not have is a settings mistake and stops the run
 function New-SqlWriteBackCommand($Set, $Row) {
   $cm = [System.Data.SqlClient.SqlCommand]::new($Set.command)
-  foreach ($name in $Set.parameters.Keys) { $cm.Parameters.AddWithValue($name, $Row.($Set.parameters[$name])) > $null }
+  foreach ($name in $Set.parameters.Keys) {
+    $column = $Set.parameters[$name]
+    $property = $Row.PSObject.Properties[$column]
+    if (-not $property) { throw "$($Set.name): parameter $name maps to column '$column', which the row does not have" }
+    $value = if ($null -eq $property.Value) { [DBNull]::Value } else { $property.Value }
+    $cm.Parameters.AddWithValue($name, $value) > $null
+  }
   $cm
 }
 

@@ -131,6 +131,21 @@ Describe 'the write command' {
     $cm.Parameters.Count | Should -Be 2
   }
 
+  It 'sends a null column as sql NULL' {
+    $set = @{ name = 'Charges'; command = 'exec add_charge @o,@q'; parameters = @{ '@o' = 'order'; '@q' = 'qty' } }
+    $row = '{"order":10,"qty":null}' | ConvertFrom-Json
+    $cm = & (Get-Module SqlWriteBack) { param($s, $r) New-SqlWriteBackCommand $s $r } $set $row
+    $cm.Parameters['@q'].Value | Should -Be ([DBNull]::Value)
+    $cm.Parameters['@o'].Value | Should -Be 10
+  }
+
+  It 'stops on a parameter mapped to a column the row does not have' {
+    $set = @{ name = 'Charges'; command = 'exec add_charge @o,@q'; parameters = @{ '@o' = 'order'; '@q' = 'quantity' } }
+    $row = '{"order":10,"qty":1}' | ConvertFrom-Json
+    { & (Get-Module SqlWriteBack) { param($s, $r) New-SqlWriteBackCommand $s $r } $set $row } |
+      Should -Throw "*@q maps to column 'quantity', which the row does not have*"
+  }
+
   It 'keeps the database message and drops the powershell wrapper on a rejected row' {
     $command = [pscustomobject]@{}
     $command | Add-Member ScriptMethod ExecuteNonQuery { throw [Data.DataException]::new('no match in assignment') }
